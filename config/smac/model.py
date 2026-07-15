@@ -222,6 +222,17 @@ class ProjectionNetwork(nn.Module):
         return self.prediction(projection)
 
 
+class MixingNetwork(nn.Module):
+    def __init__(self, hidden_state_size: int, num_agents: int, action_space_size: int):
+        super().__init__()
+        self.num_agents = num_agents
+        self.action_space_size = action_space_size
+        self.mlp = mlp(hidden_state_size * num_agents, [64, 64], num_agents * action_space_size, use_value_out=True)
+
+    def forward(self, hidden_state: torch.Tensor) -> torch.Tensor:
+        return self.mlp(hidden_state)
+
+
 class MAMuZeroNet(BaseNet):
     def __init__(
         self,
@@ -324,6 +335,31 @@ class MAMuZeroNet(BaseNet):
             pred_out,
         )
 
+        self.mixing_network = MixingNetwork(
+            hidden_state_size,
+            num_agents,
+            action_space_size
+        )
+
+    def predict_theta(self, hidden_state: torch.Tensor) -> torch.Tensor:
+        return self.mixing_network(hidden_state)
+
+    def surrogate_eta(self, theta: torch.Tensor, action: torch.Tensor, c: float = 1.0, alpha: float = 1.0) -> torch.Tensor:
+        batch_size = theta.shape[0]
+        # action is assumed to be either index (batch_size, num_agents) or one-hot
+        if action.dim() == 2:
+            action_onehot = torch.zeros((batch_size * self.num_agents, self.action_space_size), device=action.device, dtype=torch.float32)
+            action_onehot.scatter_(1, action.reshape(-1, 1).long(), 1.0)
+            action_onehot = action_onehot.reshape(batch_size, -1)
+        elif action.dim() == 3:
+            action_onehot = action.reshape(batch_size, -1)
+        else:
+            action_onehot = action
+        
+        # inner product <w(theta), psi(a)>
+        z = (theta * action_onehot).sum(dim=1, keepdim=True)
+        return c * torch.arcsinh(alpha * z)
+
     def prediction(self, hidden_state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         policy_logit, value = self.prediction_network(hidden_state)
         return policy_logit, value
@@ -367,22 +403,26 @@ class MAMuZeroNet(BaseNet):
 
         hidden_state = self.representation(observation)
         policy_logit, value = self.prediction(hidden_state)
+        theta = self.predict_theta(hidden_state)
 
         # if not in training, obtain the scalars of the value/reward
         if not self.training:
             value = self.inverse_value_transform(value).detach().cpu().numpy()
             policy_logit = policy_logit.detach().cpu().numpy()
+            theta = theta.detach().cpu().numpy()
 
-        return NetworkOutput(hidden_state, np.zeros((batch_size, 1)), value, policy_logit)
+        return NetworkOutput(hidden_state, np.zeros((batch_size, 1)), value, policy_logit, theta)
 
     def recurrent_inference(self, hidden_state: HiddenState, action: Action) -> NetworkOutput:
         next_hidden_state, reward = self.dynamics(hidden_state, action)
         policy_logit, value = self.prediction(next_hidden_state)
+        theta = self.predict_theta(next_hidden_state)
 
         # if not in training, obtain the scalars of the value/reward
         if not self.training:
             reward = self.inverse_reward_transform(reward).detach().cpu().numpy()
             value = self.inverse_value_transform(value).detach().cpu().numpy()
             policy_logit = policy_logit.detach().cpu().numpy()
+            theta = theta.detach().cpu().numpy()
 
-        return NetworkOutput(next_hidden_state, reward, value, policy_logit)
+        return NetworkOutput(next_hidden_state, reward, value, policy_logit, theta)

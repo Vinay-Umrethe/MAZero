@@ -94,7 +94,19 @@ class SampledMCTS(object):
             batch_values = batch_values.reshape(batch_size).astype(np.float32)
             batch_policy_probs = batch_policy_probs.astype(np.float32)
             batch_beta = batch_beta.astype(np.float32)
-            trees.prepare(batch_rewards, batch_values, batch_policy_probs, batch_beta, sampled_times, noise_epsilon, noises)
+            
+            theta = network_output.theta
+            num_proposed = 4
+            proposed_actions = np.zeros((batch_size, num_proposed, num_agents), dtype=np.int32)
+            for b in range(batch_size):
+                # greedy
+                proposed_actions[b, 0, :] = np.argmax(theta[b], axis=-1)
+                # random
+                proposed_actions[b, 1, :] = np.random.randint(0, action_space_size, size=(num_agents,))
+                proposed_actions[b, 2, :] = np.random.randint(0, action_space_size, size=(num_agents,))
+                proposed_actions[b, 3, :] = np.random.randint(0, action_space_size, size=(num_agents,))
+                
+            trees.prepare(batch_rewards, batch_values, batch_policy_probs, batch_beta, sampled_times, noise_epsilon, noises, theta, num_proposed, proposed_actions)
         # (b) prepare root node with fixed actions set
         else:
             raise NotImplementedError
@@ -139,8 +151,20 @@ class SampledMCTS(object):
                 batch_values = batch_values.reshape(batch_size).astype(np.float32)
                 batch_policy_probs = batch_policy_probs.astype(np.float32)
                 batch_beta = batch_beta.astype(np.float32)
+                
+                theta = network_output.theta
+                num_proposed = 4
+                proposed_actions = np.zeros((batch_size, num_proposed, num_agents), dtype=np.int32)
+                for b in range(batch_size):
+                    # greedy
+                    proposed_actions[b, 0, :] = np.argmax(theta[b], axis=-1)
+                    # random
+                    proposed_actions[b, 1, :] = np.random.randint(0, action_space_size, size=(num_agents,))
+                    proposed_actions[b, 2, :] = np.random.randint(0, action_space_size, size=(num_agents,))
+                    proposed_actions[b, 3, :] = np.random.randint(0, action_space_size, size=(num_agents,))
+                
                 trees.batch_expansion_and_backup(index_simulation + 1, discount, sampled_times,
-                                                 batch_rewards, batch_values, batch_policy_probs, batch_beta)
+                                                 batch_rewards, batch_values, batch_policy_probs, batch_beta, theta, num_proposed, proposed_actions)
 
         # get target value/policy from MCTS results
         roots_values = trees.get_roots_values()                             # (batch_size, )

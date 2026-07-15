@@ -18,7 +18,7 @@ cdef class Tree_batch:
     def __dealloc__(self):
         del self.trees
 
-    def prepare(self, rewards, values, policy_probs, beta, int sampled_times, float noise_eps, noises):
+    def prepare(self, rewards, values, policy_probs, beta, int sampled_times, float noise_eps, noises, theta=None, int num_proposed=0, proposed_actions=None):
         rewards = rewards.reshape(-1)
         if not rewards.flags['C_CONTIGUOUS']:
             rewards = np.ascontiguousarray(rewards)
@@ -44,7 +44,25 @@ cdef class Tree_batch:
             noises = np.ascontiguousarray(noises)
         cdef float[::1] noises_memview = noises                 # root_num * agent_num * action_space_size
 
-        self.trees[0].prepare(&rewards_memview[0], &values_memview[0], &policy_probs_memview[0], &beta_memview[0], sampled_times, noise_eps, &noises_memview[0])
+        cdef float[::1] theta_memview
+        cdef float* theta_ptr = NULL
+        if theta is not None:
+            theta = theta.reshape(-1).astype(np.float32)
+            if not theta.flags['C_CONTIGUOUS']:
+                theta = np.ascontiguousarray(theta)
+            theta_memview = theta
+            theta_ptr = &theta_memview[0]
+            
+        cdef int[::1] proposed_memview
+        cdef int* proposed_ptr = NULL
+        if proposed_actions is not None:
+            proposed_actions = proposed_actions.reshape(-1).astype(np.int32)
+            if not proposed_actions.flags['C_CONTIGUOUS']:
+                proposed_actions = np.ascontiguousarray(proposed_actions)
+            proposed_memview = proposed_actions
+            proposed_ptr = &proposed_memview[0]
+
+        self.trees[0].prepare(&rewards_memview[0], &values_memview[0], &policy_probs_memview[0], &beta_memview[0], sampled_times, noise_eps, &noises_memview[0], theta_ptr, num_proposed, proposed_ptr)
 
 
     def batch_selection(self, float pb_c_base, float pb_c_init, float discount):
@@ -66,7 +84,7 @@ cdef class Tree_batch:
             last_actions.reshape(self.root_num, self.agent_num)
         )
 
-    def batch_expansion_and_backup(self, int hidden_state_index_x, float discount, int sampled_times, rewards, values, policy_probs, beta):
+    def batch_expansion_and_backup(self, int hidden_state_index_x, float discount, int sampled_times, rewards, values, policy_probs, beta, theta=None, int num_proposed=0, proposed_actions=None):
         rewards = rewards.reshape(-1)
         if not rewards.flags['C_CONTIGUOUS']:
             rewards = np.ascontiguousarray(rewards)
@@ -87,8 +105,26 @@ cdef class Tree_batch:
             beta = np.ascontiguousarray(beta)
         cdef float[::1] beta_memview = beta                     # root_num * agent_num * action_space_size
 
+        cdef float[::1] theta_memview
+        cdef float* theta_ptr = NULL
+        if theta is not None:
+            theta = theta.reshape(-1).astype(np.float32)
+            if not theta.flags['C_CONTIGUOUS']:
+                theta = np.ascontiguousarray(theta)
+            theta_memview = theta
+            theta_ptr = &theta_memview[0]
+            
+        cdef int[::1] proposed_memview
+        cdef int* proposed_ptr = NULL
+        if proposed_actions is not None:
+            proposed_actions = proposed_actions.reshape(-1).astype(np.int32)
+            if not proposed_actions.flags['C_CONTIGUOUS']:
+                proposed_actions = np.ascontiguousarray(proposed_actions)
+            proposed_memview = proposed_actions
+            proposed_ptr = &proposed_memview[0]
+
         self.trees[0].cbatch_expansion_and_backup(hidden_state_index_x, discount, sampled_times,
-                                                  &rewards_memview[0], &values_memview[0], &policy_probs_memview[0], &beta_memview[0])
+                                                  &rewards_memview[0], &values_memview[0], &policy_probs_memview[0], &beta_memview[0], theta_ptr, num_proposed, proposed_ptr)
 
     def get_roots_values(self):
         root_values = np.empty(self.root_num, order='C', dtype='float32')

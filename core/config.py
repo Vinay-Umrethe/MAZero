@@ -205,7 +205,7 @@ class BaseConfig(ABC):
         self.exp_path = os.path.join(
             args.result_dir, args.case, args.env_name, args.exp_name,
             'seed={}'.format(self.seed),
-            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         )
         self.model_dir = os.path.join(self.exp_path, 'model')
         self.model_path = os.path.join(self.exp_path, 'model.p')

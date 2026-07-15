@@ -394,9 +394,10 @@ class ReanalyzeWorker(object):
         batch_sampled_imp_ratio = batch_sampled_imp_ratio.reshape(B, K + 1, C)
         batch_sampled_adv = batch_sampled_adv.reshape(B, K + 1, C)
         batch_sampled_masks = batch_sampled_masks.reshape(B, K + 1, C)
+        batch_sampled_qvalues = batch_sampled_qvalues.reshape(B, K + 1, C)
 
         batch_policies = (batch_sampled_actions, batch_sampled_policies,
-                          batch_sampled_imp_ratio, batch_sampled_adv, batch_sampled_masks)
+                          batch_sampled_imp_ratio, batch_sampled_adv, batch_sampled_masks, batch_sampled_qvalues)
         targets_batch = (batch_rewards, batch_values, batch_policies)
 
         info = (np.mean(future_return_lst), np.mean(model_index_lst), self.last_model_index)

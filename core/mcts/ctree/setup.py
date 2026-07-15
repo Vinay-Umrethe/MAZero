@@ -31,7 +31,7 @@ def find_cython_extensions(path=None):
             sources=[relpath],  # build file in current dir: core/mcts/ctree/build
             # sources=[item],  # build file in root dir: /build
             language="c++",
-            extra_compile_args=['-Wall', '-Wextra', "-fopenmp", "-O2"],
+            extra_compile_args=['/openmp', '/O2'] if os.name == 'nt' else ['-Wall', '-Wextra', "-fopenmp", "-O2"],
         ))
     return extensions
 
@@ -40,7 +40,10 @@ def find_cython_extensions(path=None):
 # cc1plus: warning: command line option ‘-Wstrict-prototypes’ is valid for C/ObjC but not for C++
 class BuildExt(build_ext):
     def build_extensions(self):
-        self.compiler.compiler_so.remove('-Wstrict-prototypes')
+        try:
+            self.compiler.compiler_so.remove('-Wstrict-prototypes')
+        except (ValueError, AttributeError):
+            pass
         super(BuildExt, self).build_extensions()
 
 

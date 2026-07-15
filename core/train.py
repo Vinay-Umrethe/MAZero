@@ -42,6 +42,7 @@ def update_weights(config: BaseConfig, step_count: int, model: BaseNet, batch: t
         target_sampled_imp_ratio,
         target_sampled_adv,
         sampled_action_mask,
+        target_sampled_qvalues,
     ) = target_policy
     batch_future_return, batch_model_index, target_model_index = info
 
@@ -67,6 +68,7 @@ def update_weights(config: BaseConfig, step_count: int, model: BaseNet, batch: t
     target_sampled_imp_ratio = torch.from_numpy(np.array(target_sampled_imp_ratio)).to(device).float()
     target_sampled_adv = torch.from_numpy(np.array(target_sampled_adv)).to(device).float()
     sampled_action_mask = torch.from_numpy(np.array(sampled_action_mask)).to(device).float()
+    target_sampled_qvalues = torch.from_numpy(np.array(target_sampled_qvalues)).to(device).float()
 
     batch_size = obs_batch.size(0)
     obs_pad_size = config.image_channel * (config.stacked_observations + config.num_unroll_steps)
@@ -146,6 +148,11 @@ def update_weights(config: BaseConfig, step_count: int, model: BaseNet, batch: t
             else:
                 raise NotImplementedError
 
+        # NonUCT loss
+        eta_pred = model.surrogate_eta(network_output.theta, target_sampled_actions[:, step_i])
+        non_uct_loss = torch.nn.functional.mse_loss(eta_pred, target_sampled_qvalues[:, step_i], reduction='none')
+        non_uct_loss = (non_uct_loss * sampled_action_mask[:, step_i]).sum(dim=1) / (sampled_action_mask[:, step_i].sum(dim=1) + 1e-5)
+
         reward_loss = torch.zeros(batch_size, device=device)
         value_loss = config.value_loss(network_output.value, target_value_phi[:, 0])
         if config.consistency_coeff > 0:
@@ -197,6 +204,12 @@ def update_weights(config: BaseConfig, step_count: int, model: BaseNet, batch: t
                 else:
                     raise NotImplementedError
 
+            # NonUCT loss
+            eta_pred = model.surrogate_eta(network_output.theta, target_sampled_actions[:, step_i])
+            step_non_uct_loss = torch.nn.functional.mse_loss(eta_pred, target_sampled_qvalues[:, step_i], reduction='none')
+            step_non_uct_loss = (step_non_uct_loss * sampled_action_mask[:, step_i]).sum(dim=1) / (sampled_action_mask[:, step_i].sum(dim=1) + 1e-5)
+            non_uct_loss += step_non_uct_loss
+
             reward_loss += config.reward_loss(network_output.reward, target_reward_phi[:, step_i - 1])          # don't mask reward loss
             value_loss += config.value_loss(network_output.value, target_value_phi[:, step_i])                  # don't mask value loss
             if config.consistency_coeff > 0:
@@ -214,6 +227,7 @@ def update_weights(config: BaseConfig, step_count: int, model: BaseNet, batch: t
             config.reward_loss_coeff * reward_loss
             + config.policy_loss_coeff * policy_loss
             + config.value_loss_coeff * value_loss
+            + config.value_loss_coeff * non_uct_loss
         )
         if config.consistency_coeff > 0:
             loss += config.consistency_coeff * consistency_loss
@@ -235,6 +249,7 @@ def update_weights(config: BaseConfig, step_count: int, model: BaseNet, batch: t
         'reward_loss': (weights * reward_loss).mean().item(),
         'policy_loss': (weights * policy_loss).mean().item(),
         'value_loss': (weights * value_loss).mean().item(),
+        'non_uct_loss': (weights * non_uct_loss).mean().item(),
     }
 
     if config.consistency_coeff > 0:
@@ -395,7 +410,10 @@ def train(config: BaseConfig, summary_writer, model_path=None):
         num_gpu_workers += (config.reanalyze_actors + config.reanalyze_update_actors)
     if config.use_priority_refresh:
         num_gpu_workers += config.refresh_actors
-    num_gpus_per_worker = 1 / math.ceil(num_gpu_workers / availabel_gpus)
+    if availabel_gpus > 0:
+        num_gpus_per_worker = 1 / math.ceil(num_gpu_workers / availabel_gpus)
+    else:
+        num_gpus_per_worker = 0
 
     # self-play workers
     data_workers = [

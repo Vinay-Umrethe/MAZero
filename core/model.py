@@ -17,6 +17,7 @@ class NetworkOutput(NamedTuple):
     reward: DefaultDataType
     value: DefaultDataType
     policy_logits: DefaultDataType
+    theta: DefaultDataType
 
 
 def concat_output_value(output_lst: List[NetworkOutput]):
@@ -30,17 +31,19 @@ def concat_output_value(output_lst: List[NetworkOutput]):
 
 def concat_output(output_lst: List[NetworkOutput]):
     # concat the model output
-    hidden_state_lst, reward_lst, value_lst, policy_logits_lst = [], [], [], []
+    hidden_state_lst, reward_lst, value_lst, policy_logits_lst, theta_lst = [], [], [], [], []
     for output in output_lst:
         hidden_state_lst.append(output.hidden_state)
         reward_lst.append(output.reward)
         value_lst.append(output.value)
         policy_logits_lst.append(output.policy_logits)
+        theta_lst.append(output.theta)
     hidden_state_lst = np.concatenate(hidden_state_lst)
     reward_lst = np.concatenate(reward_lst)
     value_lst = np.concatenate(value_lst)
     policy_logits_lst = np.concatenate(policy_logits_lst)
-    return NetworkOutput(hidden_state_lst, reward_lst, value_lst, policy_logits_lst)
+    theta_lst = np.concatenate(theta_lst)
+    return NetworkOutput(hidden_state_lst, reward_lst, value_lst, policy_logits_lst, theta_lst)
 
 
 class BaseNet(nn.Module):

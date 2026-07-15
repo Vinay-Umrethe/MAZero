@@ -2,7 +2,7 @@
 
 #include <cmath>
 #include <stack>
-#include <sys/time.h>
+// #include <sys/time.h>
 #include <map>
 #include <cstdlib>
 #include <cstring>
@@ -202,7 +202,7 @@ namespace tree
         }
     }
 
-    void CTree::prepare(float reward, float value, tools::Array2D<float> policy_probs, tools::Array2D<float> beta, int sampled_times, float noise_eps, tools::Array2D<float> noises)
+    void CTree::prepare(float reward, float value, tools::Array2D<float> policy_probs, tools::Array2D<float> beta, int sampled_times, float noise_eps, tools::Array2D<float> noises, float* theta, int num_proposed, tools::Array2D<int> proposed_actions)
     {
         /*
         Overview:
@@ -216,12 +216,12 @@ namespace tree
         */
         new (this->root) CNode(1., 1., 1., 1., true, this->rho, this->lam);
         ++(this->tot_nodes);
-        this->expand(this->root, 0, reward, value, policy_probs, beta, sampled_times, noise_eps, noises);
+        this->expand(this->root, 0, reward, value, policy_probs, beta, sampled_times, noise_eps, noises, theta, num_proposed, proposed_actions);
         this->root->visit_count += 1;
         this->root->subtree_info.update(value, 0);
     }
 
-    void CTree::expand(CNode *node, int hidden_state_index_x, float reward, float value, tools::Array2D<float> policy_probs, tools::Array2D<float> beta, int sampled_times, float noise_eps, tools::Array2D<float> noises)
+    void CTree::expand(CNode *node, int hidden_state_index_x, float reward, float value, tools::Array2D<float> policy_probs, tools::Array2D<float> beta, int sampled_times, float noise_eps, tools::Array2D<float> noises, float* theta, int num_proposed, tools::Array2D<int> proposed_actions)
     {
         /*
         Overview:
@@ -238,6 +238,9 @@ namespace tree
         node->hidden_state_index_x = hidden_state_index_x;
         node->reward = reward;
         node->pred_value = value;
+        if(theta != nullptr) {
+            node->theta_s.assign(theta, theta + this->agent_num * this->action_space_size);
+        }
 
         // compute beta_hat via beta sampling
         std::map<long, float> beta_hat;
@@ -259,6 +262,20 @@ namespace tree
             }
             beta_hat[key] += 1.0;
             action_map[key] = sampled_action;
+        }
+        for (int p = 0; p < num_proposed; ++p)
+        {
+            long key = 0;
+            std::vector<int> p_action(this->agent_num, 0);
+            for (int i = 0; i < this->agent_num; ++i)
+            {
+                p_action[i] = proposed_actions(p, i);
+                key = key * 23333 + p_action[i];
+            }
+            if (beta_hat.find(key) == beta_hat.end()) {
+                beta_hat[key] = 1.0;
+                action_map[key] = p_action;
+            }
         }
 
         node->num_children = beta_hat.size();
@@ -294,7 +311,7 @@ namespace tree
         }
     }
 
-    float CTree::ucb_score(CNode *child, float parent_q, int total_children_visit_counts, float pb_c_base, float pb_c_init, float discount)
+    float CTree::ucb_score(CNode *child, std::vector<int> const& action, std::vector<float> const& parent_theta, float parent_q, int total_children_visit_counts, float pb_c_base, float pb_c_init, float discount)
     {
         /*
         Overview:
@@ -314,21 +331,30 @@ namespace tree
         pb_c *= (sqrt(total_children_visit_counts) / (child->visit_count + 1));
 
         prior_score = pb_c * child->prior;
-        if (child->visit_count == 0)
-        {
-            value_score = 0;
-        }
-        else
-        {
-            value_score = child->get_qsa(discount) - parent_q;
-        }
+        if (!parent_theta.empty()) {
+            float z = 0.0;
+            for(int i = 0; i < this->agent_num; ++i){
+                z += parent_theta[i * this->action_space_size + action[i]];
+            }
+            float c = 1.0, alpha = 1.0;
+            value_score = c * asinh(alpha * z);
+        } else {
+            if (child->visit_count == 0)
+            {
+                value_score = 0;
+            }
+            else
+            {
+                value_score = child->get_qsa(discount) - parent_q;
+            }
 
-        value_score = this->minmax_stat.normalize(value_score);
+            value_score = this->minmax_stat.normalize(value_score);
 
-        if (value_score < 0)
-            value_score = 0;
-        if (value_score > 1)
-            value_score = 1;
+            if (value_score < 0)
+                value_score = 0;
+            if (value_score > 1)
+                value_score = 1;
+        }
 
         float ucb_value = prior_score + value_score;
         return ucb_value;
@@ -354,7 +380,7 @@ namespace tree
         for (int child_index = 0; child_index < node->num_children; ++child_index)
         {
             CNode *child = node->children[child_index];
-            float temp_score = ucb_score(child, parent_q, node->visit_count - 1, pb_c_base, pb_c_init, discount);
+            float temp_score = ucb_score(child, node->children_action[child_index], node->theta_s, parent_q, node->visit_count - 1, pb_c_base, pb_c_init, discount);
 
             if (max_score < temp_score)
             {
@@ -449,7 +475,7 @@ namespace tree
         }
     }
 
-    void CTree::expand_and_backprop(int hidden_state_index_x, float discount, int sampled_times, float reward, float value, tools::Array2D<float> policy_prob, tools::Array2D<float> beta)
+    void CTree::expand_and_backprop(int hidden_state_index_x, float discount, int sampled_times, float reward, float value, tools::Array2D<float> policy_prob, tools::Array2D<float> beta, float* theta, int num_proposed, tools::Array2D<int> proposed_actions)
     {
         /*
         Overview:
@@ -464,7 +490,7 @@ namespace tree
             - beta: the sampling distribution of the child nodes.
         */
         tools::Array2D<float> _(nullptr, 0, 0);   // placeholder
-        expand(this->result.leaf, hidden_state_index_x, reward, value, policy_prob, beta, sampled_times, 0., _);
+        expand(this->result.leaf, hidden_state_index_x, reward, value, policy_prob, beta, sampled_times, 0., _, theta, num_proposed, proposed_actions);
         back_propagate(value, discount);
     }
 
@@ -586,7 +612,7 @@ namespace tree
         free(this->node_pool);
     }
 
-    void CTree_batch::prepare(float *rewards_buf, float *values_buf, float *policy_probs_buf, float *beta_buf, int sampled_times, float noise_eps, float* noises_buf)
+    void CTree_batch::prepare(float *rewards_buf, float *values_buf, float *policy_probs_buf, float *beta_buf, int sampled_times, float noise_eps, float* noises_buf, float* theta_buf, int num_proposed, int* proposed_actions_buf)
     {
         /*
         Overview:
@@ -609,7 +635,11 @@ namespace tree
             tools::Array2D<float> prob_i(&policy_probs(i, 0, 0), policy_probs.d2, policy_probs.d3);
             tools::Array2D<float> beta_i(&beta(i, 0, 0), beta.d2, beta.d3);
             tools::Array2D<float> noise_i(&noises(i, 0, 0), noises.d2, noises.d3);
-            this->trees[i].prepare(rewards[i], values[i], prob_i, beta_i, sampled_times, noise_eps, noise_i);
+            float* theta_i = nullptr;
+            if (theta_buf != nullptr) theta_i = theta_buf + i * this->agent_num * this->action_space_size;
+            tools::Array2D<int> proposed_i(nullptr, 0, 0);
+            if (proposed_actions_buf != nullptr) proposed_i = tools::Array2D<int>(proposed_actions_buf + i * num_proposed * this->agent_num, num_proposed, this->agent_num);
+            this->trees[i].prepare(rewards[i], values[i], prob_i, beta_i, sampled_times, noise_eps, noise_i, theta_i, num_proposed, proposed_i);
         }
     }
 
@@ -641,7 +671,7 @@ namespace tree
         }
     }
 
-    void CTree_batch::cbatch_expansion_and_backup(int hidden_state_index_x, float discount, int sampled_times, float *rewards_buf, float *values_buf, float *policy_probs_buf, float *beta_buf)
+    void CTree_batch::cbatch_expansion_and_backup(int hidden_state_index_x, float discount, int sampled_times, float *rewards_buf, float *values_buf, float *policy_probs_buf, float *beta_buf, float* theta_buf, int num_proposed, int* proposed_actions_buf)
     {
         /*
         Overview:
@@ -665,7 +695,11 @@ namespace tree
         {
             tools::Array2D<float> prob_i(&policy_probs(i, 0, 0), policy_probs.d2, policy_probs.d3);
             tools::Array2D<float> beta_i(&beta(i, 0, 0), beta.d2, beta.d3);
-            this->trees[i].expand_and_backprop(hidden_state_index_x, discount, sampled_times, rewards[i], values[i], prob_i, beta_i);
+            float* theta_i = nullptr;
+            if (theta_buf != nullptr) theta_i = theta_buf + i * this->agent_num * this->action_space_size;
+            tools::Array2D<int> proposed_i(nullptr, 0, 0);
+            if (proposed_actions_buf != nullptr) proposed_i = tools::Array2D<int>(proposed_actions_buf + i * num_proposed * this->agent_num, num_proposed, this->agent_num);
+            this->trees[i].expand_and_backprop(hidden_state_index_x, discount, sampled_times, rewards[i], values[i], prob_i, beta_i, theta_i, num_proposed, proposed_i);
         }
     }
 

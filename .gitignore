@@ -9,6 +9,8 @@ build/
 cytree.cpp
 treebaseline.cpp
 
+# Output
+results/
 
 # Pycharm
 .idea/*

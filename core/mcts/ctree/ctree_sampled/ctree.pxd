@@ -13,11 +13,11 @@ cdef extern from "lib/cnode.h" namespace "tree":
     cdef cppclass CTree_batch:
         CTree_batch(int root_num, int agent_num, int action_space_size, int sampled_times, int simulation_num, float tree_value_stat_delta_lb, unsigned int random_seed, float rho, float lam) except +
 
-        void prepare(float* rewards, float* values, float* policy_probs, float* beta, int sampled_times, float noise_eps, float* noises) except +
+        void prepare(float* rewards, float* values, float* policy_probs, float* beta, int sampled_times, float noise_eps, float* noises, float* theta, int num_proposed, int* proposed_actions) except +
 
         void cbatch_selection(float pb_c_base, float pb_c_init, float discount, int* idx_ptr, int* idy_ptr, int* act_ptr) except +
 
-        void cbatch_expansion_and_backup(int hidden_state_index_x, float discount, int sampled_times, float* rewards, float* values, float* policy_probs, float* beta) except +
+        void cbatch_expansion_and_backup(int hidden_state_index_x, float discount, int sampled_times, float* rewards, float* values, float* policy_probs, float* beta, float* theta, int num_proposed, int* proposed_actions) except +
 
         void get_roots_values(float* p)                 # shape = (batch_size, )
         void get_roots_marginal_visit_count(int* p)     # shape = (batch_size, num_agents, action_space_size)

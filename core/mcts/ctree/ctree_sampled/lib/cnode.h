@@ -14,6 +14,7 @@ namespace tree
         float reward, pred_value, prior, pred_prob, beta, beta_hat;
         bool is_root;
         tools::SubTreeValueSet subtree_info;
+        std::vector<float> theta_s;
         std::vector<CNode *> children;                 // shape = (num_children, )
         std::vector<std::vector<int>> children_action; // shape = (num_children, num_agents)
 
@@ -71,15 +72,15 @@ namespace tree
         CTree(int agent_num, int action_space_size, int sampled_times, int simulation_num, float tree_value_stat_delta_lb, CNode *node_pool_ptr, unsigned int random_seed, float rho, float lam);
         ~CTree();
 
-        void prepare(float reward, float value, tools::Array2D<float> policy_probs, tools::Array2D<float> beta, int sampled_times, float noise_eps, tools::Array2D<float> noises);
-        void expand(CNode *node, int hidden_state_index_x, float reward, float value, tools::Array2D<float> policy_probs, tools::Array2D<float> beta, int sampled_times, float noise_eps, tools::Array2D<float> noises);
+        void prepare(float reward, float value, tools::Array2D<float> policy_probs, tools::Array2D<float> beta, int sampled_times, float noise_eps, tools::Array2D<float> noises, float* theta, int num_proposed, tools::Array2D<int> proposed_actions);
+        void expand(CNode *node, int hidden_state_index_x, float reward, float value, tools::Array2D<float> policy_probs, tools::Array2D<float> beta, int sampled_times, float noise_eps, tools::Array2D<float> noises, float* theta, int num_proposed, tools::Array2D<int> proposed_actions);
 
-        float ucb_score(CNode *child, float parent_mean_q, int total_children_visit_counts, float pb_c_base, float pb_c_init, float discount);
+        float ucb_score(CNode *child, std::vector<int> const& action, std::vector<float> const& parent_theta, float parent_mean_q, int total_children_visit_counts, float pb_c_base, float pb_c_init, float discount);
         int select_child(CNode *node, float pb_c_base, float pb_c_init, float discount, float mean_q);
         void select_path(float pb_c_base, float pb_c_init, float discount);
 
         void back_propagate(float value, float discount);
-        void expand_and_backprop(int hidden_state_index_x, float discount, int sampled_times, float reward, float value, tools::Array2D<float> policy_prob, tools::Array2D<float> beta);
+        void expand_and_backprop(int hidden_state_index_x, float discount, int sampled_times, float reward, float value, tools::Array2D<float> policy_prob, tools::Array2D<float> beta, float* theta, int num_proposed, tools::Array2D<int> proposed_actions);
 
         void get_root_value(float *);
 
@@ -113,11 +114,11 @@ namespace tree
         CTree_batch(int root_num, int agent_num, int action_space_size, int sampled_times, int simulation_num, float tree_value_stat_delta_lb, unsigned int random_seed, float rho, float lam);
         ~CTree_batch();
 
-        void prepare(float *rewards, float *values, float *policy_probs, float *beta, int sampled_times, float noise_eps, float* noises);
+        void prepare(float *rewards, float *values, float *policy_probs, float *beta, int sampled_times, float noise_eps, float* noises, float* theta, int num_proposed, int* proposed_actions);
 
-        void cbatch_selection(float pb_c_base, float pb_c_init, float discount, int *idx_buf, int *idy_buf, int *act_buf);
+        void cbatch_selection(float pb_c_base, float pb_c_init, float discount, int *idx_ptr, int *idy_ptr, int *act_ptr);
 
-        void cbatch_expansion_and_backup(int hidden_state_index_x, float discount, int sampled_times, float *rewards, float *values, float *policy_probs, float *beta);
+        void cbatch_expansion_and_backup(int hidden_state_index_x, float discount, int sampled_times, float *rewards, float *values, float *policy_probs, float *beta, float* theta, int num_proposed, int* proposed_actions);
 
         void get_roots_values(float *buf); // shape = (root_num, )
 
