@@ -27,8 +27,8 @@ def parse_args(args):
                         help="Discount of env (default: %(default)s)")
     groups.add_argument("--result_dir", default=os.path.join(os.getcwd(), "results"),
                         help="Directory Path to store results (default: %(default)s)")
-    groups.add_argument("--use_wandb", action="store_true", default=False,
-                        help="By default False, otherwise log data to wandb server.")
+    groups.add_argument("--use_trackio", action="store_true", default=False,
+                        help="By default False, otherwise log data to trackio server.")
 
     groups = parser.add_argument_group("Ray parameters")
     groups.add_argument("--num_gpus", type=int, default=1, help="GPUs available (default: %(default)s)")
@@ -200,7 +200,7 @@ class BaseConfig(ABC):
         self.env_name = args.env_name
         self.seed = args.seed
         self.discount = args.discount
-        self.use_wandb = args.use_wandb
+        self.use_trackio = args.use_trackio
         # create experiment result path
         self.exp_path = os.path.join(
             args.result_dir, args.case, args.env_name, args.exp_name,

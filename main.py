@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
     try:
         if args.opr == "train":
-            if args.use_wandb:
+            if args.use_trackio:
                 import trackio
                 trackio.init(
                     project=args.case, name=f"{args.case}_{args.env_name}_{args.exp_name}_seed{args.seed}",
@@ -68,11 +68,11 @@ if __name__ == "__main__":
                 test_log["mean_score"], test_log["max_score"], test_log["min_score"]))
             logging.getLogger("test").info("Test Std Score: {}".format(test_log["std_score"]))
         elif args.opr == "train_sync":
-            if args.use_wandb:
-                wandb.init(
-                    entity="heavycrab", project=args.case, group=args.env_name, job_type=args.exp_name,
-                    sync_tensorboard=True, config=game_config.get_hparams(),
-                    name=f"{args.case}_{args.env_name}_{args.exp_name}_seed{args.seed}",
+            if args.use_trackio:
+                import trackio
+                trackio.init(
+                    project=args.case, name=f"{args.case}_{args.env_name}_{args.exp_name}_seed{args.seed}",
+                    config=game_config.get_hparams(),
                 )
             summary_writer = SummaryWriter(exp_path, flush_secs=10)
             if args.pretrained_model_path is not None and os.path.exists(args.pretrained_model_path):
