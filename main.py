@@ -38,10 +38,10 @@ if __name__ == "__main__":
     try:
         if args.opr == "train":
             if args.use_wandb:
-                wandb.init(
-                    project=args.case, group=args.env_name, job_type=args.exp_name,
-                    sync_tensorboard=True, config=game_config.get_hparams(),
-                    name=f"{args.case}_{args.env_name}_{args.exp_name}_seed{args.seed}",
+                import trackio
+                trackio.init(
+                    project=args.case, name=f"{args.case}_{args.env_name}_{args.exp_name}_seed{args.seed}",
+                    config=game_config.get_hparams(),
                 )
             summary_writer = SummaryWriter(exp_path, flush_secs=10)
             if args.pretrained_model_path is not None and os.path.exists(args.pretrained_model_path):

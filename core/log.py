@@ -51,6 +51,19 @@ def _log(config, step_count, train_logs, replay_buffer, shared_storage, summary_
     train_logs['transitions_collected'] = replay_transitions_collected
 
     if summary_writer is not None:
+        try:
+            import trackio
+            t_logs = {'step': step_count}
+            for k, v in train_logs.items(): t_logs[f'train/{k}'] = v
+            if worker_logs is not None:
+                for k, v in worker_logs.items(): t_logs[f'workers/{k}'] = v
+            if test_logs is not None:
+                for k, v in test_logs.items(): t_logs[f'test/{k}'] = v
+                t_logs['test_step'] = test_logs['test_counter']
+            trackio.log(t_logs)
+        except Exception:
+            pass
+
         for k, v in train_logs.items():
             summary_writer.add_scalar('train/{}'.format(k), v, step_count)
 
